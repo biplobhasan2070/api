@@ -1,0 +1,15 @@
+{
+  "name": "steamtools-proxy",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "api/index.js",
+  "scripts": {
+    "dev": "vercel dev",
+    "start": "node api/index.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "node-fetch": "^3.3.2",
+    "jszip": "^3.10.1"
+  }
+}
