@@ -180,9 +180,9 @@ const SOURCES = [
     makeUrl: (id) =>
       `https://lua.dexpie.web.id/api/download?id=${encodeURIComponent(id)}`,
     method: "GET",
+    type: "lua",
   },
   {
-    id: "server6",
     name: "SERVER 6",
     makeUrl: (id) =>
       `https://pub-5b6d3b7c03fd4ac1afb5bd3017850e20.r2.dev/${id}.zip`,
@@ -324,15 +324,20 @@ app.get("/proxy", async (req, res) => {
           },
           body: src.body ? src.body(gameId) : null,
         });
-        // Only mark available if Content-Type is explicitly zip/octet-stream
-        // Prevents false positives where source returns HTML error page with status 200
-        const contentType = r.headers.get("Content-Type") || "";
-        const ok = r.ok && (
-          contentType.includes("zip") ||
-          contentType.includes("octet-stream") ||
-          contentType.includes("x-zip")
-        );
-        return { index: i, name: src.name, available: ok, status: r.status };
+        // For lua sources, just check the request succeeds
+        // For zip sources, verify Content-Type explicitly to avoid HTML false positives
+        let ok;
+        if (src.type === "lua") {
+          ok = r.ok;
+        } else {
+          const contentType = r.headers.get("Content-Type") || "";
+          ok = r.ok && (
+            contentType.includes("zip") ||
+            contentType.includes("octet-stream") ||
+            contentType.includes("x-zip")
+          );
+        }
+        return { index: i, name: src.name, available: ok, status: r.status, type: src.type || "zip" };
       } catch {
         return { index: i, name: src.name, available: false, status: "Error" };
       }
@@ -386,7 +391,8 @@ app.get("/proxy", async (req, res) => {
       ${results.map(r=>{
         const cls=r.available?"available":r.status==="Error"?"error":"unavailable";
         const txt=r.available?"Available":r.status==="Error"?"Error":"Not Found";
-        const btn=r.available?`<a class="button" href="/download?id=${encodeURIComponent(encodedId)}&src=${r.index}">Download</a>`:`<a class="button disabled">${txt}</a>`;
+        const label=r.type==="lua"?"Download (.lua)":"Download";
+        const btn=r.available?`<a class="button" href="/download?id=${encodeURIComponent(encodedId)}&src=${r.index}">${label}</a>`:`<a class="button disabled">${txt}</a>`;
         return `<tr><td>${r.name}</td><td class="${cls}">${txt}</td><td>${btn}</td></tr>`;
       }).join("")}
     </table>
@@ -436,6 +442,15 @@ app.get("/download", async (req, res) => {
     if (!r.ok) return res.status(r.status).send("Source not OK");
 
     const buffer = Buffer.from(await r.arrayBuffer());
+
+    // If this source serves a lua file, stream it directly — no ZIP processing
+    if (src.type === "lua") {
+      res.set({
+        "Content-Type": "text/plain",
+        "Content-Disposition": `attachment; filename="${gameId}.lua"`,
+      });
+      return res.send(buffer);
+    }
 
     // Validate ZIP magic bytes: PK\x03\x04 (50 4B 03 04)
     // Prevents "End of data reached / Corrupted zip" when source returns
